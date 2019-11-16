@@ -1,0 +1,70 @@
+var fs = require('fs');
+var mqtt = require('mqtt');
+
+var mqttServer = require('../src/server');
+
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"; // trust self signed certificate
+
+describe('server', function(){
+  it('should start multiple servers and allow connection', function(done){
+    var servers = mqttServer({
+      mqtt: 'tcp://localhost:9001',
+      mqtts: 'ssl://localhost:9002',
+      mqttws: 'ws://localhost:9003',
+      mqtwss: 'wss://localhost:9004'
+    }, {
+      ssl: {
+        key: fs.readFileSync('./test/support/server.key'),
+        cert: fs.readFileSync('./test/support/server.crt')
+      }
+    }, function(client){
+      client.on('connect', function(){
+        client.connack({
+          returnCode: 0
+        });
+      });
+    });
+
+    servers.listen(function(){
+      var c1 = mqtt.connect('mqtt://localhost:9001');
+      c1.on('connect', function(){
+        var c2 = mqtt.connect('mqtts://localhost:9002', {
+          rejectUnauthorized: false
+        });
+        c2.on('connect', function(){
+          var c3 = mqtt.connect('ws://localhost:9003');
+          c3.on('connect', function(){
+            var c4 = mqtt.connect('wss://localhost:9004');
+            c4.on('connect', function(){
+              done();
+            });
+          });
+        });
+      });
+    });
+  });
+
+  it('should have an option to disable event emitting', function(done){
+    var servers = mqttServer({
+      mqtt: 'tcp://localhost:9005'
+    }, {
+      emitEvents: false
+    }, function(client){
+      client.on('connect', function(){
+        assert(false);
+      });
+      client.on('data', function(){
+        setTimeout(function(){
+          client.connack({
+            returnCode: 0
+          });
+        }, 10);
+      })
+    });
+
+    servers.listen(function(){
+      var c1 = mqtt.connect('mqtt://localhost:9005');
+      c1.on('connect', done)
+    });
+  });
+});
